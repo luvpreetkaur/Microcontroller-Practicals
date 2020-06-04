@@ -1,0 +1,64 @@
+
+NAME:Luvpreet Kaur
+ROLLNO:304338
+
+
+
+
+
+/* LPC1768 TFT LCD interface
+		* P0.6  - LCD_CSB - used as GPIO
+	 	* P0.7  - LCD_SCK
+	 	* P0.8  - LCD_MISO
+	 	* P0.9  - LCD_MOSI
+		* P1.25 - WR 	- GPIO
+		* P1.26 - RS  	- GPIO
+		* P1.29 - LCD backlight	-GPIO
+*/
+
+#include "LPC1768_Includes.h"
+#include "LCD.h" 
+
+void LCD_color(unsigned int val)
+{	
+	unsigned int i;
+	WriteReg(0x0020, 0); 		//Set X-position 0    
+	WriteReg(0x0021, 0);	   	//Set Y-position 0 
+
+	WriteIndex(0x0022);					  //Select GRAM
+
+	FIO0CLR = CS;									//Chip Select low
+	ReadWriteByte(SPI_START | SPI_WR | SPI_DATA);	//Command WRITE DATA
+
+	for(i=0; i<(320*240); i++)						//write  bit color value to the GRAM
+	{
+		 ReadWriteByte(val>>8);
+		 ReadWriteByte(val & 0xFF); 
+	}
+	delay(100);
+	FIO0SET = CS;								  	//Chip Select high
+}
+
+
+int main()
+{
+	LCD_initialise();
+
+	delay(100);
+
+	while(1)
+	{
+		LCD_color(White);
+		LCD_color(Red);
+		LCD_color(Blue);
+		LCD_color(Grey);
+		LCD_color(Green);
+		LCD_color(Black);
+		LCD_color(Blue2);
+		LCD_color(Yellow);
+		LCD_color(Cyan);
+		LCD_color(Magenta);
+	}
+
+	return 0;
+}

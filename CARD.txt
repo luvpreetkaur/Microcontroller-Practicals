@@ -1,0 +1,264 @@
+
+NAME:Luvpreet Kaur
+ROLLNO:304338
+
+#include "lpc214x.h"
+#include "stdio.h"
+#include <math.h>
+#include "SPI.h"
+#include "card.h"
+#include "UART.h"
+ 
+#define   CD 	1<<22		//Card Detect Pin
+
+
+unsigned char CMD0[6] = {0x40,0x00,0x00,0x00,0x00,0x95};	//for initialization
+unsigned char CMD1[6] = {0x41,0x00,0x00,0x00,0x00,0xFF};	//to check if card is ready
+unsigned char CMD8[6] = {0x48,0x00,0x00,0x01,0xAA,0x87};
+unsigned char CMD9[6] = {0x49,0x00,0x00,0x00,0x00,0x00};	//to read capacity of card
+unsigned char CMD10[6]= {0x4A,0x00,0x00,0x00,0x00,0x00};	//to read name, serial no. etc
+unsigned char CMD13[6]= {0x4d,0x00,0x00,0x00,0x00,0x00};	//Send Status
+unsigned char CMD17[6]= {0x51,0x00,0x00,0x00,0x00,0x00};	//to read from a sector
+unsigned char CMD24[6]= {0x58,0x00,0x00,0x00,0x00,0x00};	//to write to a sector
+unsigned char CMD41[6]= {0x69,0x40,0x00,0x00,0x00,0xFF};	//ACMD41 loop
+unsigned char CMD55[6]= {0x77,0x00,0x00,0x00,0x00,0xFF};
+
+unsigned char ch;											//for counting and temp purpose
+unsigned int i;
+
+
+unsigned char send_cmd(unsigned char *temp)
+{
+	for(i=0;i<6;i++)									   	//send the 6 byte command
+		spi0_write(temp[i]);
+
+	ch = spi0_read();									  	//dummy read; provide clock pulses to card to process command
+	return ch;
+}
+
+void card_init()
+{
+	unsigned int timer = 20;
+
+	PINSEL1 &= 0xFFFFCFFF; 									//configure P1.22 as GPIO for detecting card
+	IODIR0 &= ~CD;										   	//CD pin as input
+
+	if(IOPIN0 & CD)										   	//if card not inserted; wait till card is inserted
+	{
+		printf("Insert card");
+		while(IOPIN0 & CD);
+		delay(5000);
+	}
+	printf("\nInitializing Card\n");
+	delay(1000);							   			//on power on, wait atleast 1m sec
+	spi0_init();
+
+	for(i=0;i<10;i++)   								//send 80 clock pulses
+		spi0_read();
+	/* CMD0 routine*/
+	printf("CMD0\n");
+	IOCLR0 = SSEL0;								//chip select low
+	send_cmd(CMD0);								 //send 8 clock pulses for processing
+	spi0_read();
+	ch = spi0_read();								 //if read returns 0x01... card is initialised for SPI protocol
+	IOSET0 = SSEL0;								//chip select high
+	delay(1000);
+	if(ch == 0x01)
+		printf("response = %02x\nCard configured in SPI mode\n",ch);
+	delay(1000);
+
+
+/////////////////////////////////////////////////////////////////////////////
+
+
+	printf("CMD8\n");
+	IOCLR0 = SSEL0;
+	send_cmd(CMD8);
+	ch = spi0_read();
+	delay(1000);
+	printf("response = %02x\n",ch);
+	IOSET0 = SSEL0;
+	delay(1000);
+
+
+/////////////////////////////////////////////////////////////////////////////
+	
+	printf("ACMD41\n");
+	delay(1000);
+	do
+	{
+		IOCLR0 = SSEL0;
+		send_cmd(CMD55);
+		ch = spi0_read();
+		ch = spi0_read();
+		IOSET0 = SSEL0;
+
+		delay(500);
+
+		IOCLR0 = SSEL0;
+		send_cmd(CMD41);
+		ch = spi0_read();
+		IOSET0 = SSEL0;
+		delay(100);
+	}
+	while(ch != 0x00 && --timer);
+	if(timer == 0)
+	 	printf("Card Initialization FAILED\n");
+	else
+		printf("Card Initialization SUCCESS\n");
+}
+
+
+unsigned char card_write(unsigned int sector, unsigned char data)
+{
+	unsigned char temp[6] = {0,0,0,0,0,0};
+	printf("\n\nWriting to sector 0x%x\n",sector);
+
+	sector = sector*512;
+	temp[0] = CMD24[0];
+	temp[4] = sector & 0xFF;
+	temp[3] = (sector>>8) & 0xFF;
+	temp[2] = (sector>>16) & 0xFF;
+
+	
+	printf("CMD24\n");
+	IOCLR0 = SSEL0;
+	send_cmd(temp);
+	ch = spi0_read();
+	ch = spi0_read();
+	spi0_read();
+	spi0_read();
+	spi0_write(0xFE);
+
+	printf("Start writing data 0x%02x\n",data);
+	for(i=0;i<=512;i++)
+		spi0_write(data);
+
+	spi0_write(0x00);
+	ch = spi0_write(0x00); 
+	delay(5000);
+	printf("Packet Response = 0x%02x\n",ch);
+	if(((ch&0x1F)>>1) == 0x02)
+		printf("Write SUCCESS\n");
+	else
+		printf("Write failed\n");
+
+	
+	spi0_read(); 
+	spi0_read();
+
+	IOSET0 = SSEL0;
+	return ch;
+}
+
+
+
+unsigned char card_read(unsigned int sector)
+{
+	unsigned char temp[6] = {0,0,0,0,0,0};
+	unsigned int timer = 100;
+	printf("\nReading from sector 0x%x\n",sector);	
+	printf("CMD17\n");
+
+	sector = sector*512;
+	temp[0] = CMD17[0];
+	temp[4] = sector & 0xFF;
+	temp[3] = (sector>>8) & 0xFF;
+	temp[2] = (sector>>16) & 0xFF;
+
+
+	IOCLR0 = SSEL0;
+	send_cmd(temp);
+	spi0_read();
+	do
+	{
+		ch=spi0_read();
+	}
+	while(ch != 0xFE && --timer);
+
+	if(timer == 0)
+	{
+		printf("Read FAILED\n");
+		while(1);
+	}
+	printf("Start reading\n");
+	delay(5000);
+	for(i=0;i<512;i++)
+		ch=spi0_read();
+
+	printf("Read data = 0x%02x\n",ch);
+	ch = spi0_read();
+	ch = spi0_read();
+
+	IOSET0 = SSEL0;
+	printf("Read SUCCESS\n");
+	return 1;
+}
+
+void card_cid()
+{
+	unsigned char temp[16], i;
+	unsigned char name[5], MID, PRV, Mdate, month, year;
+	IOCLR0 = SSEL0;
+	send_cmd(CMD10);
+	do
+		ch = spi0_read();
+	while(ch != 0xFE);
+
+	for(i=0;i<16;i++)
+		temp[i] = spi0_read();
+	spi0_read();
+	spi0_read();
+	IOSET0 = SSEL0;
+
+	MID = temp[0];
+	printf("Manufacturer ID: %d\n",MID);				//Display Manufacturer ID
+
+
+	for(i=0;i<5;i++)
+		name[i] = temp[i+3];
+	printf("Product Name: %s\n",name);					//Display Product Name
+	printf("Sr. No.: ");
+	for(i=0;i<4;i++)
+		printf("%02X", temp[i+9]);				  		//Display Product Serial Number
+
+	PRV = temp[8];
+	printf("\nProduct revision: %d\n",PRV);  				//Display Product Revision
+
+	Mdate = temp[14];
+	month = Mdate & 0x0F;
+	year = (Mdate & 0xF0) >> 4;
+	printf("Manufacturing Date: %d/%d\n", month, year);			//Display Manufacturing date
+
+}
+
+void card_csd()
+{
+	unsigned char temp[16], i;
+	unsigned long int C_SIZE=0, C_MUL=0, BL_Len=0;
+	unsigned long int capacity;
+	IOCLR0 = SSEL0;
+	send_cmd(CMD9);
+	do
+		ch = spi0_read();
+	while(ch != 0xFE);
+
+	for(i=0;i<16;i++)
+		temp[i] = spi0_read(); 
+	spi0_read();
+	spi0_read();
+	IOSET0 = SSEL0;
+
+	C_SIZE |= (temp[8] >>6);
+	C_SIZE |= (temp[7] <<2);
+	C_SIZE |= ((temp[6] & 0x03) <<9);
+
+	C_MUL |= (temp[10] >>7);
+	C_MUL |= ((temp[9]& 0x03)  <<1);
+
+	BL_Len = (temp[5] & 0x0F);
+
+	capacity = (C_SIZE+1) * ((double)pow(2,C_MUL+2)) * ((double)pow(2,BL_Len));
+
+	printf("\nCapacity of the card is %d\n",capacity);
+}

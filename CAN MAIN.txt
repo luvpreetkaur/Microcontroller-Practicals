@@ -1,0 +1,28 @@
+NAME:Luvpreet Kaur
+ROLLNO:304338
+
+
+#include "LPC1768_Includes.h"
+#include "UART.h"
+#include "stdio.h"
+#include "CAN.h"
+
+
+int main()
+{  
+UartInit(9600);   
+printf("Hello\n");
+CANInit();
+SetAccFilter();							 //set acceptance filter for receiving msg
+CAN1SendMsg(EXP_STD_ID1, 0x11223344, 0x55667788); 							 //send msg via CAN1
+while(!(CAN2GSR & (1<<0)));				 //wait till CAN2 Rx buffer receives
+printf("\nCAN2 Msg Received\n");
+printf("ID    = 0x%08X\n",CAN2RID);		 //display received data
+printf("FRAME = 0x%08X\n",CAN2RFS);
+printf("DATA1 = 0x%08X\n",CAN2RDA);
+printf("DATA2 = 0x%08X\n",CAN2RDB);
+CAN2CMR = 1<<2;							 //release Rx buffer for next reception
+
+while(1);								 //stop here
+return 0;
+}

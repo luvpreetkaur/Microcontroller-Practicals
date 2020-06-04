@@ -1,0 +1,77 @@
+NAME:Luvpreet Kaur
+ROLLNO:304338
+
+#include "LPC1768_Includes.h"
+#include "CAN.h"
+#include "stdio.h"
+
+void CANInit(void)
+{
+unsigned int temp;
+PCONP |= (1<<13) | (1<<14);
+PINSEL0 &= ~0x0000000F;	 				//CAN1 is p0.0 and p0.1	
+PINSEL0 |= 0x00000005;
+PINSEL4 &= ~0x0003C000;  				//CAN2 is p2.7 and p2.8 */
+PINSEL4 |= 0x00014000;
+
+CAN1MOD = CAN2MOD = 0x01;					//CAN reset, write to CAN registers now
+CAN1IER = CAN2IER = 0;
+CAN1GSR = CAN2GSR = 0;
+CAN1CMR = CAN2CMR = (1<<1)|(1<<2)|(1<<3);  	//Request command to release Rx, Tx buffer and clear data overrun
+temp = CAN1ICR;			  					//Read to clear interrupts
+temp = CAN2ICR;
+
+CAN1BTR = CAN2BTR = 0x001C0008;				//Bit Timing Values for 18MHz pclk frequency, 1/4 of 72Mhz CCLK
+CAN1MOD = CAN2MOD = 0x00;					//CAN normal operation, CAN registers can't be written now
+
+printf("CAN initialized\n");
+}
+
+
+
+void SetAccFilter(void)
+{
+unsigned int address = 0;
+unsigned int *RAMptr = (unsigned int*)CANAF_RAM_BASE;
+
+printf("Setting Access Filter\n");
+AFMR = 0x01;					//Acc Filter Off
+	
+SFF_sa = address;		  		//Set Explicit Std Frame  
+*RAMptr++ = (0<<29) | (EXP_STD_ID1<<16) | (1<<13) | EXP_STD_ID1;		//CAN1 accept EXP_STD_ID1; CAN2 accept EXP_STD_ID1
+address = address+4;  
+*RAMptr++ = (0<<29) | (EXP_STD_ID2<<16) | (1<<13) | EXP_STD_ID2;		//CAN1 accept EXP_STD_ID2; CAN2 accept EXP_STD_ID2
+address = address+4; 
+
+SFF_GRP_sa = address;		 	//Set Range of Std Frame  (can be same as Explicit Std Frame)
+
+EFF_sa = address;  				//Set Explicit Extended Frame
+*RAMptr++ = (1<<29) | (EXP_EXT_ID1);	   //CAN2 accept EXP_EXT_ID1
+address = address+4;
+*RAMptr++ = (1<<29) | (EXP_EXT_ID2);	   //CAN2 accept EXP_EXT_ID2
+address = address+4;
+
+EFF_GRP_sa = address;			//Set Range of Extended Frame	(can be same as Explicit Extended Frame)
+
+ENDofTable = address;			//Set end of Look Up Table
+
+AFMR = 0x00;					//Acc Filter On
+printf("Access Filter Set\n");
+}
+
+
+
+void CAN1SendMsg(unsigned int TxMsgID, unsigned int DATA1, unsigned int DATA2)		 //Function to send msg over CAN1
+{		  
+unsigned int TxFrame = 0x00080000;				//set data length 8 bytes
+
+while(!(CAN1GSR & (1<<3)));					  	//Wait till all the previous transmission requests are complete
+
+	CAN1TFI1 = TxFrame & 0xC00F0000;			//Send msg through buffer 1
+	CAN1TID1 = TxMsgID;
+	CAN1TDA1 = DATA1;
+	CAN1TDB1 = DATA2;
+	CAN1CMR  = 0x21;							//transmit buffer1
+	while(!(CAN1GSR & (1<<3)));					//Wait till all the transmission requests are complete
+	printf("CAN1 Msg Sent!\n");
+}

@@ -1,5 +1,7 @@
-//Name: Luvpreet Kaur
-//Roll no:3043338
+
+NAME:Luvpreet Kaur
+ROLLNO:304338
+
 
 #include<stdio.h>
 #include "UART.h"
@@ -19,7 +21,7 @@ void UartInit(unsigned int baudrate)
 	U0TER = 0x80;
 }
 
-int UART_GetChar(void)
+																										 int UART_GetChar(void)
 {
 	while(!(U0LSR & 0x1));
 return(U0RBR);
