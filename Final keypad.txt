@@ -1,0 +1,175 @@
+#include <p18f4550.h>
+#include<stdio.h>
+
+#define LCD_EN LATCbits.LC1
+#define LCD_RS LATCbits.LC0
+#define LCDPORT LATB
+
+
+void lcd_delay(unsigned int time)
+{
+ unsigned int i , j ;
+
+    for(i = 0; i < time; i++)
+    {
+            for(j=0;j<100;j++);
+    }
+}
+
+
+
+void SendInstruction(unsigned char command)
+{
+    //set RS pin low
+     LCD_RS = 0;		// RS low : Instruction
+     lcd_delay(10);
+    //Set EN pin HIgh
+     LCD_EN = 1;		// EN High
+     lcd_delay(10);
+    //Set Data on pins
+     LCDPORT = command; 		// DATA
+     lcd_delay(10);
+    //set EN pin Low
+     LCD_EN = 0;		// EN Low
+     lcd_delay(10);
+     LCD_RS = 0;		// RS Low
+}
+
+void SendData(unsigned char lcddata)
+{
+    //set RS pin low
+     LCD_RS = 1;		// RS HIGH : DATA
+     lcd_delay(10);
+    //Set EN pin HIgh
+     LCD_EN = 1;		// EN High
+     lcd_delay(10);
+    //Set Data on pins
+     LCDPORT = lcddata; 		// DATA
+     lcd_delay(10);
+    //set EN pin Low
+     LCD_EN = 0;		// EN Low
+     lcd_delay(10);
+     LCD_RS = 0;		// RS Low
+}
+
+void SetLineNumber(unsigned char linenum)
+{
+    if(linenum == 1)
+    {
+      SendInstruction( 0x80 );		// set ddram address as 0x00
+    }
+    else
+    {
+      SendInstruction( 0xC4 );		// set ddram address as 0x40
+    }
+}
+
+
+void LCDDisplayStr(unsigned char *String)
+{
+  while(*String)
+  {
+   SendData(*String);
+   String++;
+  }
+}
+
+
+void InitLCD(void)
+{
+    TRISB = 0x00; //set data port as output
+    TRISCbits.RC0 = 0; //EN pin
+    TRISCbits.RC1 = 0; // RS pin
+
+    //initialise the lcd : function set command : 8 bit interface : 5ms wait
+    SendInstruction( 0x38 );
+    lcd_delay(5);
+    //initialise the lcd : function set command : 8 bit interface : 100us wait
+    SendInstruction( 0x0C );
+    lcd_delay(5);
+    //initialise the lcd : function set command : 8 bit interface : set interface , line numbers and font size
+    SendInstruction( 0x01 );  // set interface 8 bit, no of lines =2 and character font 5x7
+   lcd_delay(5);
+    SendInstruction(0x06);
+lcd_delay(5);
+}
+
+void delay()
+{
+    unsigned int i;
+    for(i=0;i<5000;i++);
+}
+
+void ADCInit(void)
+{
+    TRISEbits.RE1 = 1;                  //ADC channel 6 input
+    TRISEbits.RE2 = 1;                  //ADC channel 7 input
+
+    ADCON1 = 0b00000111;                //Ref voltages Vdd & Vss; AN0 - AN7 channels Analog
+    ADCON2 = 0b10101110;                //Right justified; Acquisition time 4T; Conversion clock Fosc/64
+}
+
+unsigned short Read_ADC(unsigned char Ch)
+{
+    ADCON0 = 0b00000001 | (Ch<<2);      //ADC on; Select channel;
+    GODONE = 1;              //Start Conversion
+
+    while(GO_DONE == 1 );    //Wait till A/D conversion is complete
+    return ADRES;                       //Return ADC result
+}
+
+void DisplayResult(unsigned short ADCVal)
+{
+ unsigned char i,text[16];
+ unsigned short tempv;
+ tempv = ADCVal;
+
+ ADCVal = (5500/1024)*tempv;            //Convert binary data to mV;   1 bit <=> (5500/1024)mV
+ //sprintf(text,"%04dmv",ADCVal);         //Convert integer data to string
+ for(int i=3; i>=0; i--)                      //Display string on LCD
+ {
+   text[i]=  (ADCVal%10)+'0';
+   ADCVal/ = 10;
+ }
+ text[4]='m';
+ text[5]='v';
+ for(i=0;i<6;i++)                       //Display string on LCD
+ {
+   SendData(text[i]);
+ }
+
+ SetLineNumber(2);                      //Display the 10 bit ADC result on LCD
+ for(i=0;i<10;i++)
+ {
+   if(tempv & 0x200)
+   {
+    SendData('1');
+   }
+   else
+   {
+     SendData('0');
+   }
+   tempv<<=1;
+ }
+
+}
+
+void main()
+{
+    unsigned short Ch_result;
+
+    TRISB = 0x00;                       //PORTB connected to LCD is output
+    ADCInit();
+    InitLCD();
+
+
+    while(1)
+    {
+        SetLineNumber(1);
+        LCDDisplayStr("ADC Value=");
+        Ch_result = Read_ADC(7);
+        DisplayResult(Ch_result);
+        delay();
+        delay();
+    }
+}
